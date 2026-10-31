@@ -1,0 +1,39 @@
+#!/bin/zsh
+# Compiles Distribution/NotchLingBridge.swift into the app's Contents/Helpers.
+# Runs as an Xcode Run Script phase (uses ARCHS, so Debug builds the active
+# arch and Release builds a universal helper) and can also be run by hand:
+#   ./Scripts/build-bridge <output-path> [arch ...]
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+SOURCE="$ROOT/Distribution/NotchLingBridge.swift"
+
+if [[ $# -ge 1 ]]; then
+  OUTPUT="$1"; shift
+  ARCH_LIST=("$@")
+  WORK="$(mktemp -d)"
+else
+  OUTPUT="$TARGET_BUILD_DIR/$CONTENTS_FOLDER_PATH/Helpers/notchling-bridge"
+  ARCH_LIST=(${=ARCHS})
+  WORK="$DERIVED_FILE_DIR/bridge"
+fi
+[[ ${#ARCH_LIST[@]} -gt 0 ]] || ARCH_LIST=("$(uname -m)")
+DEPLOYMENT="${MACOSX_DEPLOYMENT_TARGET:-14.0}"
+
+mkdir -p "$WORK" "$(dirname "$OUTPUT")"
+SLICES=()
+for arch in "${ARCH_LIST[@]}"; do
+  xcrun swiftc -O -module-cache-path "${MODULE_CACHE:-$WORK/ModuleCache}" \
+    -target "$arch-apple-macos$DEPLOYMENT" "$SOURCE" -o "$WORK/notchling-bridge-$arch"
+  SLICES+=("$WORK/notchling-bridge-$arch")
+done
+
+# Intermediates stay in DERIVED_FILE_DIR; only the final helper is a declared
+# output so single-architecture builds can also skip this phase when unchanged.
+if [[ ${#SLICES[@]} -eq 1 ]]; then
+  cp "${SLICES[1]}" "$OUTPUT"
+else
+  lipo -create "${SLICES[@]}" -output "$WORK/notchling-bridge"
+  cp "$WORK/notchling-bridge" "$OUTPUT"
+fi
+chmod 755 "$OUTPUT"

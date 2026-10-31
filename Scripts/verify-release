@@ -1,0 +1,68 @@
+#!/bin/zsh
+# Checks a built NotchLing release the way Gatekeeper will.
+#   ./Scripts/verify-release [--notarized] <NotchLing.app> [NotchLing.dmg]
+# Always: valid signature, hardened runtime on the app and bridge helper, and a
+# DMG with the app, Applications shortcut and install-instructions layout.
+# --notarized: also a Developer ID signature with a secure timestamp, a stapled
+# ticket (stapler validate) and a Gatekeeper "accepted" verdict (spctl) for the
+# app, the DMG, and the app inside the DMG.
+set -uo pipefail
+
+NOTARIZED=0
+if [[ "${1:-}" == "--notarized" ]]; then NOTARIZED=1; shift; fi
+APP="${1:?Usage: verify-release [--notarized] <NotchLing.app> [NotchLing.dmg]}"
+DMG="${2:-}"
+HELPER="$APP/Contents/Helpers/notchling-bridge"
+
+FAILED=0
+check() { # check <label> <command...>
+  local label="$1"; shift
+  if "$@" >/dev/null 2>&1; then echo "  PASS  $label"; else echo "  FAIL  $label"; FAILED=1; fi
+}
+# Capture output first: grep -q exiting early would SIGPIPE the producer under pipefail.
+has_flag() { local out; out="$(codesign -d --verbose=4 "$1" 2>&1)"; [[ "$out" == *flags=*\(*runtime*\)* ]]; }
+developer_id() { local out; out="$(codesign -dvv "$1" 2>&1)"; [[ "$out" == *$'\n'"Authority=Developer ID Application"* ]]; }
+timestamped() { local out; out="$(codesign -dvv "$1" 2>&1)"; [[ "$out" == *$'\n'"Timestamp="* ]]; }
+# stapler validate also talks to Apple, so ride out a dropped connection.
+stapled() { local i; for i in 1 2 3 4; do xcrun stapler validate "$1" && return 0; sleep 5; done; return 1; }
+gatekeeper_app() { local out; out="$(spctl -a -vv -t exec "$1" 2>&1)"; [[ "$out" == *"source=Notarized Developer ID"* ]]; }
+gatekeeper_dmg() { local out; out="$(spctl -a -vv -t open --context context:primary-signature "$1" 2>&1)"; [[ "$out" == *"source=Notarized Developer ID"* ]]; }
+
+echo "App: $APP"
+check "app signature is valid" codesign --verify --deep --strict "$APP"
+check "app has hardened runtime" has_flag "$APP"
+check "bridge helper has hardened runtime" has_flag "$HELPER"
+if (( NOTARIZED )); then
+  check "app signed with Developer ID" developer_id "$APP"
+  check "bridge signed with Developer ID" developer_id "$HELPER"
+  check "app has a secure timestamp" timestamped "$APP"
+  check "bridge has a secure timestamp" timestamped "$HELPER"
+  check "app ticket is stapled" stapled "$APP"
+  check "Gatekeeper accepts app (notarized)" gatekeeper_app "$APP"
+fi
+
+if [[ -n "$DMG" ]]; then
+  echo "DMG: $DMG"
+  if (( NOTARIZED )); then
+    check "DMG signature is valid" codesign --verify --strict "$DMG"
+    check "DMG signed with Developer ID" developer_id "$DMG"
+    check "DMG ticket is stapled" stapled "$DMG"
+    check "Gatekeeper accepts DMG (notarized)" gatekeeper_dmg "$DMG"
+  fi
+  MOUNT="$(mktemp -d)"
+  trap 'hdiutil detach "$MOUNT" -quiet -force >/dev/null 2>&1; rmdir "$MOUNT" 2>/dev/null' EXIT
+  if hdiutil attach "$DMG" -nobrowse -readonly -noverify -mountpoint "$MOUNT" -quiet; then
+    check "DMG has NotchLing.app and an Applications shortcut" [ -d "$MOUNT/NotchLing.app" -a -L "$MOUNT/Applications" ]
+    check "DMG has its install-instructions background and layout" [ -s "$MOUNT/.background.png" -a -s "$MOUNT/.DS_Store" ]
+    if (( NOTARIZED )); then
+      check "app inside DMG: signature is valid" codesign --verify --deep --strict "$MOUNT/NotchLing.app"
+      check "app inside DMG: ticket is stapled" stapled "$MOUNT/NotchLing.app"
+      check "app inside DMG: Gatekeeper accepts" gatekeeper_app "$MOUNT/NotchLing.app"
+    fi
+  else
+    echo "  FAIL  could not mount DMG"; FAILED=1
+  fi
+fi
+
+if (( FAILED )); then echo "verify-release: FAILED" >&2; exit 1; fi
+echo "verify-release: all checks passed"

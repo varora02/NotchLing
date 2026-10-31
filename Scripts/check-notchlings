@@ -1,0 +1,27 @@
+#!/bin/zsh
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+CHECK_APP="$ROOT/.build/NotchlingChecks.app"
+mkdir -p "$CHECK_APP/Contents/MacOS" "$CHECK_APP/Contents/Resources"
+RESOURCE_SOURCE="$ROOT/Assets"
+if [[ $# -gt 0 ]]; then
+  RESOURCE_SOURCE="$1/Contents/Resources/Assets"
+fi
+# Replace only this check harness's copy, so stale resources cannot pass a test.
+rm -rf "$CHECK_APP/Contents/Resources/Assets"
+cp -R "$RESOURCE_SOURCE" "$CHECK_APP/Contents/Resources/Assets"
+cat > "$CHECK_APP/Contents/Info.plist" <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict><key>CFBundleIdentifier</key><string>app.notchling.NotchLing.checks</string><key>CFBundleExecutable</key><string>NotchlingChecks</string><key>CFBundlePackageType</key><string>APPL</string></dict></plist>
+PLIST
+xcrun swiftc -module-cache-path "$ROOT/.build/check-module-cache" \
+  "$ROOT/NotchLing/NotchlingDefinition.swift" "$ROOT/NotchLing/AppModel.swift" \
+  "$ROOT/NotchLing/LocalEventMonitor.swift" "$ROOT/NotchLing/AgentIntegration.swift" \
+  "$ROOT/NotchLing/NotchWindowController.swift" "$ROOT/NotchLing/NotchRootView.swift" \
+  "$ROOT/NotchLing/NotchlingView.swift" \
+  "$ROOT/NotchLing/OnboardingModel.swift" "$ROOT/NotchLing/OnboardingViews.swift" \
+  "$ROOT/NotchLing/MoveToApplications.swift" \
+  "$ROOT/Scripts/NotchlingContractChecks.swift" \
+  -o "$CHECK_APP/Contents/MacOS/NotchlingChecks"
+"$CHECK_APP/Contents/MacOS/NotchlingChecks"

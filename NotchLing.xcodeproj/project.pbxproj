@@ -1,0 +1,269 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		100000000000000000000001 = {isa = PBXBuildFile; fileRef = 200000000000000000000001; };
+		100000000000000000000002 = {isa = PBXBuildFile; fileRef = 200000000000000000000002; };
+		100000000000000000000003 = {isa = PBXBuildFile; fileRef = 200000000000000000000003; };
+		100000000000000000000004 = {isa = PBXBuildFile; fileRef = 200000000000000000000004; };
+		100000000000000000000005 = {isa = PBXBuildFile; fileRef = 200000000000000000000005; };
+		100000000000000000000006 = {isa = PBXBuildFile; fileRef = 200000000000000000000006; };
+		100000000000000000000007 = {isa = PBXBuildFile; fileRef = 200000000000000000000007; };
+		100000000000000000000009 = {isa = PBXBuildFile; fileRef = 20000000000000000000000A; };
+		10000000000000000000000B = {isa = PBXBuildFile; fileRef = 20000000000000000000000B; };
+		10000000000000000000000D = {isa = PBXBuildFile; fileRef = 20000000000000000000000D; };
+		10000000000000000000000E = {isa = PBXBuildFile; fileRef = 20000000000000000000000E; };
+		10000000000000000000000F = {isa = PBXBuildFile; fileRef = 20000000000000000000000F; };
+		100000000000000000000010 = {isa = PBXBuildFile; fileRef = 200000000000000000000010; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		200000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotchLingApp.swift; sourceTree = "<group>"; };
+		200000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
+		200000000000000000000003 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalEventMonitor.swift; sourceTree = "<group>"; };
+		200000000000000000000004 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIntegration.swift; sourceTree = "<group>"; };
+		200000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotchWindowController.swift; sourceTree = "<group>"; };
+		200000000000000000000006 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotchlingView.swift; sourceTree = "<group>"; };
+		200000000000000000000007 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotchRootView.swift; sourceTree = "<group>"; };
+		200000000000000000000009 = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = NotchLing.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		20000000000000000000000A = {isa = PBXFileReference; explicitFileType = folder; path = Assets; sourceTree = "<group>"; };
+		20000000000000000000000B = {isa = PBXFileReference; lastKnownFileType = image.icns; path = AppIcon.icns; sourceTree = "<group>"; };
+		20000000000000000000000C = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		20000000000000000000000D = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotchlingDefinition.swift; sourceTree = "<group>"; };
+		20000000000000000000000E = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingModel.swift; sourceTree = "<group>"; };
+		20000000000000000000000F = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingViews.swift; sourceTree = "<group>"; };
+		200000000000000000000010 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoveToApplications.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		300000000000000000000001 = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = ();
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		400000000000000000000001 = {
+			isa = PBXGroup;
+			children = (
+				20000000000000000000000B,
+				20000000000000000000000A,
+				400000000000000000000002,
+				400000000000000000000003,
+			);
+			sourceTree = "<group>";
+		};
+		400000000000000000000002 = {
+			isa = PBXGroup;
+			children = (
+				20000000000000000000000C,
+				200000000000000000000001,
+				200000000000000000000002,
+				200000000000000000000003,
+				200000000000000000000004,
+				200000000000000000000005,
+				200000000000000000000006,
+				200000000000000000000007,
+				20000000000000000000000D,
+				20000000000000000000000E,
+				20000000000000000000000F,
+				200000000000000000000010,
+			);
+			path = NotchLing;
+			sourceTree = "<group>";
+		};
+		400000000000000000000003 = {
+			isa = PBXGroup;
+			children = (200000000000000000000009,);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		500000000000000000000001 = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 600000000000000000000002;
+			buildPhases = (
+				700000000000000000000001,
+				300000000000000000000001,
+				700000000000000000000002,
+				700000000000000000000003,
+			);
+			buildRules = ();
+			dependencies = ();
+			name = NotchLing;
+			productName = NotchLing;
+			productReference = 200000000000000000000009;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		800000000000000000000001 = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2660;
+				LastUpgradeCheck = 2660;
+			};
+			buildConfigurationList = 600000000000000000000001;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (en, Base);
+			mainGroup = 400000000000000000000001;
+			productRefGroup = 400000000000000000000003;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (500000000000000000000001,);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		700000000000000000000002 = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				100000000000000000000009,
+				10000000000000000000000B,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		700000000000000000000003 = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 0;
+			buildActionMask = 2147483647;
+			files = ();
+			inputFileListPaths = ();
+			inputPaths = (
+				"$(SRCROOT)/Scripts/build-bridge",
+				"$(SRCROOT)/Distribution/NotchLingBridge.swift",
+			);
+			name = "Build notchling-bridge helper";
+			outputFileListPaths = ();
+			outputPaths = (
+				"$(TARGET_BUILD_DIR)/$(CONTENTS_FOLDER_PATH)/Helpers/notchling-bridge",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/zsh;
+			shellScript = "\"$SRCROOT/Scripts/build-bridge\"\n";
+		};
+/* End PBXShellScriptBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		700000000000000000000001 = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				100000000000000000000001,
+				100000000000000000000002,
+				100000000000000000000003,
+				100000000000000000000004,
+				100000000000000000000005,
+				100000000000000000000006,
+				100000000000000000000007,
+				10000000000000000000000D,
+				10000000000000000000000E,
+				10000000000000000000000F,
+				100000000000000000000010,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		900000000000000000000001 = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_MODULES = YES;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		900000000000000000000002 = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_MODULES = YES;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+			};
+			name = Release;
+		};
+		900000000000000000000003 = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = NotchLing/Info.plist;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 0.2.0;
+				PRODUCT_BUNDLE_IDENTIFIER = app.notchling.NotchLing;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		900000000000000000000004 = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = NotchLing/Info.plist;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 0.2.0;
+				PRODUCT_BUNDLE_IDENTIFIER = app.notchling.NotchLing;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		600000000000000000000001 = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				900000000000000000000001,
+				900000000000000000000002,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		600000000000000000000002 = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				900000000000000000000003,
+				900000000000000000000004,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 800000000000000000000001;
+}

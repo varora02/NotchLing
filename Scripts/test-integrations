@@ -1,0 +1,392 @@
+#!/usr/bin/env python3
+"""Tests for notchling-bridge, the helper that connects agents. Runs in a throwaway HOME.
+
+  ./Scripts/test-integrations                                     # builds the bridge with swiftc
+  NOTCHLING_BRIDGE=/path/to/bridge ./Scripts/test-integrations    # tests a prebuilt bridge
+
+Each check covers one behavior across all four providers; failures list what broke.
+"""
+import json
+import os
+import pathlib
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
+
+ROOT = pathlib.Path(__file__).resolve().parent.parent
+PROVIDERS = ["claude", "codex", "cursor", "antigravity"]
+SUPPORT = "Library/Application Support/NotchLing"
+failures, total = [], 0
+
+
+def check(problems, label):
+    """problems: a bool (True = pass) or a list of problem strings (empty = pass)."""
+    global total
+    total += 1
+    ok = problems if isinstance(problems, bool) else not problems
+    if not ok:
+        failures.append(label)
+        print(f"  FAIL  {label}" + ("" if isinstance(problems, bool) else f": {problems[:4]}"))
+
+
+def jdump(data):
+    return json.dumps(data, indent=2) + "\n"
+
+
+# Configs as a real user might have them: existing hooks, comments, a multi-line notify,
+# and a [profiles.x] table holding its own notify that must never be touched.
+FIXTURES = {
+    ".claude/settings.json": jdump({"model": "opus", "hooks": {
+        "Stop": [{"hooks": [{"type": "command", "command": "/usr/local/bin/my-stop-hook"}]}],
+        "PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": "echo pre"}]}]}}),
+    ".codex/hooks.json": jdump({"hooks": {"Stop": [{"hooks": [{"type": "command", "command": "/bin/user-codex-stop"}]}]}}),
+    ".codex/config.toml": (
+        '# my codex config\nmodel = "gpt-5"\nnotify = [\n  "/usr/local/bin/my-notify",  # trailing ] comment\n  "--flag",\n]\n'
+        'approval_policy = "never"\n\n[profiles.x]\nnotify = ["must", "not", "touch"]\n\n[mcp_servers.foo]\ncommand = "x"\n'),
+    ".cursor/hooks.json": jdump({"version": 1, "hooks": {"stop": [{"command": "/usr/local/bin/cursor-user-stop"}]}}),
+    ".gemini/config/hooks.json": jdump({"my-hook": {"enabled": True}}),
+}
+JSON_CONFIGS = {
+    "claude": ".claude/settings.json", "codex": ".codex/hooks.json",
+    "cursor": ".cursor/hooks.json", "antigravity": ".gemini/config/hooks.json",
+}
+# NotchLing handlers expected per config after install: one per state change, none per tool call.
+HANDLERS = {".claude/settings.json": 4, ".codex/hooks.json": 5, ".cursor/hooks.json": 3, ".gemini/config/hooks.json": 3}
+
+
+class Env:
+    def __init__(self, home, bridge):
+        self.home, self.bridge = home, bridge
+        self.env = dict(os.environ, HOME=str(home), NOTCHLING_HOME_OVERRIDE=str(home))
+        for key in ("CLAUDE_CODE_SESSION_ID", "CLAUDE_PROJECT_DIR", "CLAUDE_CODE_ENTRYPOINT"):
+            self.env.pop(key, None)
+
+    def run(self, *args, stdin=None):
+        return subprocess.run([str(self.bridge), *map(str, args)], input=stdin, capture_output=True,
+                              text=True, env=self.env, timeout=120)
+
+    def reset(self, fixtures=False):
+        shutil.rmtree(self.home)
+        self.home.mkdir()
+        if fixtures:
+            for rel, text in FIXTURES.items():
+                self.write(rel, text)
+
+    def path(self, rel):
+        return self.home / rel
+
+    def write(self, rel, text):
+        self.path(rel).parent.mkdir(parents=True, exist_ok=True)
+        self.path(rel).write_text(text)
+
+    def install_all(self):
+        return [p for p in PROVIDERS if self.run("install", p).returncode != 0]
+
+    def snapshot(self):
+        return {str(p.relative_to(self.home)): p.read_bytes() for p in sorted(self.home.rglob("*"))
+                if p.is_file() and p.name not in ("inbox.jsonl", "notchling-bridge")}
+
+    def events(self):
+        inbox = self.path(f"{SUPPORT}/inbox.jsonl")
+        return [json.loads(line) for line in inbox.read_text().splitlines()] if inbox.exists() else []
+
+
+def handlers(node):
+    """Every NotchLing hook command found anywhere in a parsed config."""
+    if isinstance(node, dict):
+        return [v for k, v in node.items() if k == "command" and "notchling-bridge" in str(v)] + \
+               [h for v in node.values() if isinstance(v, (dict, list)) for h in handlers(v)]
+    if isinstance(node, list):
+        return [h for v in node for h in handlers(v)]
+    return []
+
+
+def test_install_and_uninstall(env):
+    print("install twice, then uninstall")
+    env.reset(fixtures=True)
+    check(env.install_all() == [], "all four providers install")
+    counts = {rel: len(handlers(json.loads(env.path(rel).read_text()))) for rel in HANDLERS}
+    check([r for r in HANDLERS if counts[r] != HANDLERS[r]] == [], "exactly one NotchLing handler per event, in every config")
+    toml = env.path(".codex/config.toml").read_text()
+    check('"must", "not", "touch"' in toml and "notchling-bridge" in toml.split("[profiles.x]")[0],
+          "codex notify replaced at top level; [profiles.x] notify untouched")
+    first = env.snapshot()
+    env.install_all()
+    check(first == env.snapshot(), "installing again changes nothing")
+    check([r for r, t in FIXTURES.items() if env.path(r + ".notchling-backup").read_text() != t] == [],
+          "backups hold each original file exactly")
+    original = json.loads(env.path(f"{SUPPORT}/integrations/codex-notify-original.json").read_text())["original"]
+    check(original == ["/usr/local/bin/my-notify", "--flag"], "the user's own notify is saved, not NotchLing's")
+
+    check(env.run("uninstall", "all").returncode == 0, "uninstall succeeds")
+    check([r for r, t in FIXTURES.items() if env.path(r).read_text() != t] == [], "uninstall restores every config byte-for-byte")
+    after = env.snapshot()
+    env.run("uninstall", "all")
+    check(after == env.snapshot(), "uninstalling twice changes nothing")
+
+    env.reset()
+    env.install_all()
+    check(env.path(".codex/config.toml").exists(), "codex config is created when none existed")
+    env.run("uninstall", "all")
+    check([r for r in [*HANDLERS, ".codex/config.toml"] if env.path(r).exists()] == [], "files NotchLing created are removed again")
+
+
+def test_reinstall_clears_older_hooks(env):
+    print("reinstall over an older version")
+    env.reset()
+    old = "/old/Application Support/NotchLing/integrations/notchling-bridge"
+    stale = lambda provider, event: {"type": "command", "command": f'"{old}" hook {provider} {event}', "timeout": 3}
+    user_hook = {"type": "command", "command": "/usr/local/bin/my-stop-hook"}
+    env.write(".claude/settings.json", jdump({"hooks": {
+        "Stop": [{"hooks": [user_hook]}],
+        **{e: [{"hooks": [stale("claude", e)]}] for e in ("SessionStart", "PostToolUse", "PostToolUseFailure", "Notification")}}}))
+    env.write(".cursor/hooks.json", jdump({"version": 1, "hooks": {"postToolUse": [{"command": f'"{old}" hook cursor postToolUse'}]}}))
+    env.write(".gemini/config/hooks.json", jdump({"notchling-status": {"enabled": True,
+        "PostToolUse": [{"matcher": "*", "hooks": [stale("antigravity", "PostToolUse")]}]}}))
+    check(env.install_all() == [], "installing over an older version succeeds")
+    claude = json.loads(env.path(".claude/settings.json").read_text())["hooks"]
+    cursor = json.loads(env.path(".cursor/hooks.json").read_text())["hooks"]
+    gem = json.loads(env.path(".gemini/config/hooks.json").read_text())["notchling-status"]
+    gone = [e for e in ("SessionStart", "PostToolUse", "PostToolUseFailure", "Notification") if e in claude]
+    gone += [e for e in ("postToolUse",) if e in cursor] + [e for e in ("PostToolUse",) if e in gem]
+    check(gone == [], "per-tool-call and other retired hooks from an older version are removed")
+    check(any(h.get("command") == "/usr/local/bin/my-stop-hook" for g in claude["Stop"] for h in g["hooks"]),
+          "the user's own hook on the same event is kept")
+    check(all(len(handlers(json.loads(env.path(rel).read_text()))) == n for rel, n in HANDLERS.items()),
+          "each config ends with exactly the current set, no duplicates")
+
+
+def test_malformed_configs_untouched(env):
+    print("unreadable configs are never overwritten")
+    bad = {"claude": "{ not json,,", "cursor": '{"version": 1,', "antigravity": "[1,2,3]", "codex": "garbage"}
+    problems = []
+    for provider, content in bad.items():
+        env.reset()
+        rel = JSON_CONFIGS[provider]
+        env.write(rel, content)
+        result = env.run("install", provider)
+        if result.returncode == 0 or not result.stderr.strip():
+            problems.append(f"{provider}: no error")
+        if env.path(rel).read_text() != content or env.path(rel + ".notchling-backup").exists():
+            problems.append(f"{provider}: file changed")
+    check(problems, "install refuses an unparsable config, says why, and leaves it alone")
+    env.reset()
+    broken_toml = 'notify = ["abc\nmodel = "x"\n'
+    env.write(".codex/config.toml", broken_toml)
+    env.run("install", "codex")
+    env.write(".claude/settings.json", "{ nope")
+    env.run("uninstall", "claude")
+    check(env.path(".codex/config.toml").read_text() == broken_toml and env.path(".claude/settings.json").read_text() == "{ nope",
+          "invalid TOML is untouched, and uninstall leaves malformed JSON alone")
+
+
+def test_hooks(env):
+    print("hook events")
+    env.reset()
+    env.install_all()
+    support = env.path(SUPPORT)
+
+    def fire(provider, event, payload):
+        stdin = payload if isinstance(payload, str) else json.dumps(payload)
+        result = env.run("hook", provider, *([event] if event else []), stdin=stdin)
+        return result.returncode, result.stdout.strip()
+
+    outcomes = [
+        fire("claude", "Stop", {"session_id": "s1", "cwd": "/tmp/proj"}),
+        fire("claude", "PermissionRequest", {"session_id": "s2", "cwd": "/tmp/proj", "tool_name": "Bash"}),
+        fire("codex", "", {"hook_event_name": "Stop", "session_id": "c1", "cwd": "/x/codexproj"}),
+        fire("cursor", "beforeSubmitPrompt", {"conversation_id": "k1", "workspace_roots": ["/x/cur"]}),
+        fire("antigravity", "Stop", {"conversationId": "a1", "workspacePaths": ["/x"], "error": None, "fullyIdle": True}),
+        fire("antigravity", "Stop", {"conversationId": "a2", "workspacePaths": ["/x"], "error": "", "fullyIdle": True}),
+        fire("antigravity", "Stop", {"conversationId": "a3", "workspacePaths": ["/x"], "error": "boom", "fullyIdle": True}),
+        fire("antigravity", "PreInvocation", {"conversationId": "a4", "workspacePaths": ["/x"]}),
+        fire("claude", "Stop", "not json at all"), fire("claude", "Stop", "[1,2,3]"), fire("codex", "", "[1,2]"),
+    ]
+    check([o for o in outcomes if o[0] != 0] == [], "hooks always exit 0, even on garbage input, so they never break an agent")
+    check(outcomes[3][1] == '{"continue":true}' and outcomes[0][1] == "{}", "hooks print the reply each agent expects")
+    by_id = {e["sessionID"]: e for e in env.events()}
+    states = {k: by_id[k]["state"] for k in ("codex:c1", "cursor:k1", "antigravity:a1", "antigravity:a2", "antigravity:a3", "antigravity:a4")}
+    check(states == {"codex:c1": "completed", "cursor:k1": "working", "antigravity:a1": "completed",
+                     "antigravity:a2": "completed", "antigravity:a3": "needsAttention", "antigravity:a4": "working"},
+          "events map to the right state, and a null or empty error is not an error")
+    check(by_id["claude:s2"]["message"] == "Approve Bash" and by_id["codex:c1"]["project"] == "codexproj", "event message and project name")
+    check(all("source" not in e for e in env.events()), "hook events carry no 'source' tag (only notify events do)")
+
+    # Data written by the app's helper is owner-only, and an older loose install gets tightened.
+    support.chmod(0o755)
+    env.path(f"{SUPPORT}/inbox.jsonl").chmod(0o644)
+    fire("claude", "Stop", {"session_id": "perm", "cwd": "/tmp"})
+    modes = [support.stat().st_mode & 0o777, env.path(f"{SUPPORT}/integrations").stat().st_mode & 0o777,
+             env.path(f"{SUPPORT}/inbox.jsonl").stat().st_mode & 0o777]
+    check(modes == [0o700, 0o700, 0o600], "support folder is 0700 and the event file is 0600, even if it was looser before")
+
+
+def test_concurrent_hooks(env, count=24):
+    print("concurrent hooks")
+    env.reset()
+    env.install_all()
+    procs = [subprocess.Popen([str(env.bridge), "hook", "claude", "Stop"], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                              stderr=subprocess.PIPE, text=True, env=env.env) for _ in range(count)]
+    for i, p in enumerate(procs):
+        p.communicate(json.dumps({"session_id": f"conc{i}", "cwd": "/tmp/" + "x" * 3000}), timeout=60)
+    lines = env.path(f"{SUPPORT}/inbox.jsonl").read_text().splitlines()
+    ids = set()
+    for line in lines:
+        try:
+            ids.add(json.loads(line)["sessionID"])
+        except (ValueError, KeyError):
+            pass
+    check(len(lines) == count and len(ids) == count, f"{count} simultaneous hooks write {count} intact lines, none lost or interleaved")
+
+
+def test_codex_notify(env):
+    print("codex notify")
+    env.reset()
+    marker = env.home / "forwarded.txt"
+    original = env.home / "my-notify.sh"
+    original.write_text(f'#!/bin/sh\necho "$@" > "{marker}"\n')
+    original.chmod(0o755)
+    own = f'notify = ["{original}", "--flag"]\n'
+    env.write(".codex/config.toml", own)
+    env.run("install", "codex")
+    env.run("notify", json.dumps({"type": "agent-turn-complete", "thread-id": "t9", "cwd": "/a/b/proj"}))
+    for _ in range(50):
+        if marker.exists() and marker.read_text().strip():
+            break
+        time.sleep(0.1)
+    forwarded = marker.read_text() if marker.exists() else ""
+    check("--flag" in forwarded and "agent-turn-complete" in forwarded, "the user's original notify command still receives every notification")
+    check(any(e["sessionID"] == "codex:t9" and e["state"] == "completed" and e.get("source") == "notify" for e in env.events()),
+          "notify records a completion event, tagged as coming from notify")
+    check(env.run("notify", "not json").returncode == 0, "notify never fails on bad input")
+    env.run("uninstall", "all")
+    check(env.path(".codex/config.toml").read_text() == own, "uninstall puts the user's original notify back verbatim")
+
+    # Codex Computer Use wraps notify and forwards to NotchLing itself; leave that chain alone.
+    wrapper = env.path(f"{SUPPORT}/integrations/notchling-bridge")
+    previous = json.dumps([str(wrapper), "notify"]).replace('"', '\\"')
+    chained = f'notify = ["/opt/OtherTool/client", "turn-ended", "--previous-notify", "{previous}"]\n'
+    env.write(".codex/config.toml", chained)
+    env.run("install", "codex")
+    env.run("install", "codex")
+    env.run("uninstall", "codex")
+    check(env.path(".codex/config.toml").read_text() == chained, "another tool's notify chain that already reaches NotchLing is never rewritten")
+
+
+STUB_XCRUN = """#!/bin/sh
+# Stands in for xcrun: records every call and replies like notarytool with $STUB_STATUS.
+echo "$*" >> "$STUB_CALLS"
+case "$2" in
+  submit) printf '{"id":"stub-id","path":"x"}\\n' ;;
+  info) printf '{"id":"stub-id","status":"%s"}\\n' "$STUB_STATUS" ;;
+  log) echo "stub rejection details" ;;
+  staple)
+    n=$(wc -l < "$STUB_CALLS"); [ "$n" -gt "$STUB_STAPLE_FAILS" ] && exit 0
+    echo "Error 68" >&2; exit 68 ;;
+esac
+exit 0
+"""
+
+
+def make_bundle(root, runtime):
+    """A minimal ad-hoc signed NotchLing.app (copies of /usr/bin/true); no network or Apple account."""
+    app = root / "NotchLing.app"
+    for folder in ("Contents/MacOS", "Contents/Helpers"):
+        (app / folder).mkdir(parents=True, exist_ok=True)
+    (app / "Contents/Info.plist").write_text(
+        '<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict>'
+        "<key>CFBundleExecutable</key><string>NotchLing</string>"
+        "<key>CFBundleIdentifier</key><string>test.notchling.fixture</string>"
+        "<key>CFBundlePackageType</key><string>APPL</string></dict></plist>")
+    for binary in ("Contents/MacOS/NotchLing", "Contents/Helpers/notchling-bridge"):
+        shutil.copy("/usr/bin/true", app / binary)
+    flags = ["--options", "runtime"] if runtime else []
+    for target in (app / "Contents/Helpers/notchling-bridge", app):
+        subprocess.run(["codesign", "--force", *flags, "--sign", "-", str(target)], check=True, capture_output=True)
+    return app
+
+
+def test_release_scripts(tmp):
+    work = tmp / "release"
+    (work / "bin").mkdir(parents=True)
+    stub = work / "bin/xcrun"
+    stub.write_text(STUB_XCRUN)
+    stub.chmod(0o755)
+    calls = work / "calls.log"
+    artifact = work / "NotchLing.zip"
+    artifact.write_text("x")
+    secret = "abcd-efgh-ijkl-mnop"
+
+    def notarize(status, **override):
+        calls.write_text("")
+        env = dict(os.environ, PATH=f"{work / 'bin'}:{os.environ['PATH']}", STUB_CALLS=str(calls), STUB_STATUS=status,
+                   APPLE_ID="dev@example.com", APPLE_APP_SPECIFIC_PASSWORD=secret, APPLE_TEAM_ID="TEAM123456",
+                   NOTARIZE_TIMEOUT="0", NOTARIZE_POLL="0")
+        env.update(override)
+        for key in [k for k, v in override.items() if v is None]:
+            del env[key]
+        return subprocess.run([str(ROOT / "Scripts/notarize"), str(artifact)], env=env, capture_output=True, text=True)
+
+    accepted = notarize("Accepted")
+    check(accepted.returncode == 0, "notarize succeeds when Apple accepts the submission")
+    invalid = notarize("Invalid")
+    check(invalid.returncode != 0, "notarize fails when Apple rejects it, even though notarytool exited 0")
+    check(" log stub-id " in calls.read_text(), "notarize fetches the rejection log for an Invalid submission")
+    check("stub rejection details" in invalid.stderr, "notarize shows why Apple rejected it")
+    stuck = notarize("In Progress")
+    check(stuck.returncode != 0 and "stub-id" in stuck.stderr, "notarize times out on a stuck submission and prints its id")
+    check(secret not in accepted.stdout + accepted.stderr + invalid.stdout + invalid.stderr + stuck.stderr, "notarize never prints the app-specific password")
+    check(notarize("Accepted", APPLE_TEAM_ID=None).returncode != 0, "notarize refuses to run without all three credentials")
+
+    def staple(failures, attempts="3"):
+        calls.write_text("")
+        env = dict(os.environ, PATH=f"{work / 'bin'}:{os.environ['PATH']}", STUB_CALLS=str(calls), STUB_STATUS="Accepted",
+                   STUB_STAPLE_FAILS=str(failures), STAPLE_ATTEMPTS=attempts, STAPLE_DELAY="0")
+        return subprocess.run([str(ROOT / "Scripts/staple"), str(artifact)], env=env, capture_output=True, text=True)
+
+    check(staple(0).returncode == 0, "staple succeeds on the first try")
+    flaky = staple(2)
+    check(flaky.returncode == 0 and len(calls.read_text().splitlines()) == 3, "staple retries a dropped connection until it works")
+    check(staple(5).returncode != 0, "staple gives up and fails after the last attempt")
+
+    hardened = make_bundle(work / "hardened", runtime=True)
+    plain = make_bundle(work / "plain", runtime=False)
+    verify = lambda app: subprocess.run([str(ROOT / "Scripts/verify-release"), str(app)], capture_output=True, text=True)
+    check(verify(hardened).returncode == 0, "verify-release passes a validly signed hardened-runtime bundle")
+    check(verify(plain).returncode != 0, "verify-release rejects a bundle signed without hardened runtime")
+    (hardened / "Contents/Helpers/notchling-bridge").write_bytes(b"tampered")
+    check(verify(hardened).returncode != 0, "verify-release rejects a bundle modified after signing")
+    check(subprocess.run([str(ROOT / "Scripts/verify-release"), "--notarized", str(plain)], capture_output=True).returncode != 0,
+          "verify-release --notarized rejects an ad-hoc signed bundle")
+
+
+def main():
+    base = pathlib.Path(os.environ.get("TMPDIR", "/tmp")).resolve()
+    tmp = pathlib.Path(tempfile.mkdtemp(prefix="notchling-int-", dir=str(base))).resolve()
+    assert tmp != pathlib.Path.home().resolve() and str(tmp).startswith(str(base))
+    try:
+        (tmp / "home").mkdir()
+        bridge = os.environ.get("NOTCHLING_BRIDGE")
+        if not bridge:
+            print("Building bridge...")
+            (tmp / "build").mkdir()
+            bridge = str(tmp / "build/notchling-bridge")
+            subprocess.run(["xcrun", "swiftc", str(ROOT / "Distribution/NotchLingBridge.swift"), "-o", bridge], check=True,
+                           env=dict(os.environ, CLANG_MODULE_CACHE_PATH=str(tmp / "build/ModuleCache")))
+        env = Env(tmp / "home", bridge)
+        for test in (test_install_and_uninstall, test_reinstall_clears_older_hooks, test_malformed_configs_untouched, test_hooks,
+                     test_concurrent_hooks, test_codex_notify):
+            test(env)
+        test_release_scripts(tmp)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    print(f"\n{total} checks, {len(failures)} failures")
+    for f in failures:
+        print(" -", f)
+    return 1 if failures else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

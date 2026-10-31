@@ -1,0 +1,49 @@
+#!/bin/zsh
+# Submits a file to Apple's notary service and fails unless Apple accepts it.
+#   ./Scripts/notarize <file.zip|file.dmg>
+# Reads APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD and APPLE_TEAM_ID from the
+# environment. The credentials are never echoed.
+# NOTARIZE_TIMEOUT (seconds, default 1200) and NOTARIZE_POLL (default 15) tune the wait.
+set -euo pipefail
+
+FILE="${1:?Usage: notarize <file>}"
+: "${APPLE_ID:?APPLE_ID is not set}"
+: "${APPLE_APP_SPECIFIC_PASSWORD:?APPLE_APP_SPECIFIC_PASSWORD is not set}"
+: "${APPLE_TEAM_ID:?APPLE_TEAM_ID is not set}"
+[[ -f "$FILE" ]] || { echo "Not a file: $FILE" >&2; exit 1; }
+
+NAME="$(basename "$FILE")"
+credentials=(--apple-id "$APPLE_ID" --password "$APPLE_APP_SPECIFIC_PASSWORD" --team-id "$APPLE_TEAM_ID")
+json_field() { print -r -- "$1" | /usr/bin/plutil -extract "$2" raw -o - - 2>/dev/null || true; }
+
+# Submit without --wait: its own --timeout did not stop a hung submission, and
+# polling prints the submission id up front so a stuck one can be looked up later.
+echo "Submitting $NAME to the notary service..."
+SUBMISSION="$(xcrun notarytool submit "$FILE" "${credentials[@]}" --output-format json)" || true
+ID="$(json_field "$SUBMISSION" id)"
+if [[ -z "$ID" ]]; then
+  echo "Could not submit $NAME to the notary service: ${SUBMISSION:-no response}" >&2
+  exit 1
+fi
+echo "Submitted $NAME as $ID; waiting for Apple..."
+
+DEADLINE=$(( SECONDS + ${NOTARIZE_TIMEOUT:-1200} ))
+while true; do
+  INFO="$(xcrun notarytool info "$ID" "${credentials[@]}" --output-format json)" || true
+  STATUS="$(json_field "$INFO" status)"
+  case "$STATUS" in
+    Accepted)
+      echo "Notarized $NAME (submission $ID)."
+      exit 0 ;;
+    Invalid|Rejected)
+      echo "Notarization failed for $NAME: status '$STATUS' (submission $ID)." >&2
+      xcrun notarytool log "$ID" "${credentials[@]}" >&2 || true
+      exit 1 ;;
+  esac
+  if (( SECONDS >= DEADLINE )); then
+    echo "Timed out waiting for Apple to notarize $NAME; last status '${STATUS:-unknown}'." >&2
+    echo "Check it later with: xcrun notarytool info $ID --apple-id <id> --team-id <team> --password <app-specific>" >&2
+    exit 1
+  fi
+  sleep "${NOTARIZE_POLL:-15}"
+done

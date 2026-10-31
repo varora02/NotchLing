@@ -1,0 +1,68 @@
+name: macOS CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-test:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select newest installed Xcode
+        run: |
+          XCODE=$(ls -d /Applications/Xcode*.app | sort -V | tail -1)
+          sudo xcode-select -s "$XCODE/Contents/Developer"
+          xcodebuild -version
+      - name: Repository checks
+        run: |
+          ./Scripts/check-notchlings
+          ./Scripts/test-integrations
+      - name: Build Debug app
+        run: xcodebuild -project NotchLing.xcodeproj -scheme NotchLing -configuration Debug -derivedDataPath .build/dd CODE_SIGNING_ALLOWED=NO build
+      - name: Package app artifact
+        run: ditto -c -k --sequesterRsrc --keepParent .build/dd/Build/Products/Debug/NotchLing.app "$RUNNER_TEMP/NotchLing.app.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NotchLing-Debug-app
+          path: ${{ runner.temp }}/NotchLing.app.zip
+          if-no-files-found: error
+          retention-days: 3
+
+  os-compat:
+    needs: build-test
+    strategy:
+      fail-fast: false
+      matrix:
+        # macOS 14 is the supported minimum; 15 is the current runner image.
+        os: [macos-14, macos-15]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: NotchLing-Debug-app
+          path: ${{ runner.temp }}/artifact
+      - name: Unpack app
+        run: ditto -x -k "$RUNNER_TEMP/artifact/NotchLing.app.zip" "$RUNNER_TEMP"
+      - name: Test bundled bridge
+        env:
+          NOTCHLING_BRIDGE: ${{ runner.temp }}/NotchLing.app/Contents/Helpers/notchling-bridge
+        run: ./Scripts/test-integrations
+      - name: Headless app smoke launch
+        run: |
+          SMOKE_HOME=$(mktemp -d "$RUNNER_TEMP/notchling-home.XXXXXX")
+          CRASH_DIR="$HOME/Library/Logs/DiagnosticReports"
+          BEFORE=$(find "$CRASH_DIR" -maxdepth 1 -name 'NotchLing*' -type f -print 2>/dev/null | sort || true)
+          NOTCHLING_HOME_OVERRIDE="$SMOKE_HOME" "$RUNNER_TEMP/NotchLing.app/Contents/MacOS/NotchLing" >"$RUNNER_TEMP/notchling-smoke.log" 2>&1 &
+          APP_PID=$!
+          trap 'kill "$APP_PID" 2>/dev/null || true; wait "$APP_PID" 2>/dev/null || true; rm -rf "$SMOKE_HOME"' EXIT
+          sleep 8
+          kill -0 "$APP_PID"
+          AFTER=$(find "$CRASH_DIR" -maxdepth 1 -name 'NotchLing*' -type f -print 2>/dev/null | sort || true)
+          test "$BEFORE" = "$AFTER"

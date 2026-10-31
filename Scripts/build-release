@@ -1,0 +1,132 @@
+#!/bin/zsh
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$ROOT"
+
+BUILD_DIR="$ROOT/.release-build"
+DIST_DIR="$ROOT/dist"
+DERIVED="$BUILD_DIR/DerivedData"
+STAGE_DIR="$BUILD_DIR/stage"
+
+rm -rf "$BUILD_DIR" "$DIST_DIR"
+mkdir -p "$STAGE_DIR" "$DIST_DIR"
+
+PROJECT_VERSION=$(sed -n 's/.*MARKETING_VERSION = \([^;]*\);.*/\1/p' NotchLing.xcodeproj/project.pbxproj | head -1)
+PROJECT_BUILD=$(sed -n 's/.*CURRENT_PROJECT_VERSION = \([^;]*\);.*/\1/p' NotchLing.xcodeproj/project.pbxproj | head -1)
+VERSION="${RELEASE_VERSION:-}"
+
+if [[ -z "$VERSION" && "${GITHUB_REF_TYPE:-}" == "tag" && "${GITHUB_REF_NAME:-}" == v* ]]; then
+  VERSION="${GITHUB_REF_NAME#v}"
+fi
+
+if [[ -z "$VERSION" ]]; then
+  EXACT_TAG=$(git describe --tags --exact-match 2>/dev/null || true)
+  if [[ "$EXACT_TAG" == v* ]]; then
+    VERSION="${EXACT_TAG#v}"
+  fi
+fi
+
+VERSION="${VERSION:-$PROJECT_VERSION}"
+BUILD_NUMBER="${RELEASE_BUILD_NUMBER:-${GITHUB_RUN_NUMBER:-$PROJECT_BUILD}}"
+
+if [[ ! "$VERSION" =~ '^[0-9]+([.][0-9]+){1,2}$' ]]; then
+  echo "Invalid release version '$VERSION'. Use a numeric version such as 0.2.1." >&2
+  exit 1
+fi
+if [[ ! "$BUILD_NUMBER" =~ '^[0-9]+$' ]]; then
+  echo "Invalid build number '$BUILD_NUMBER'." >&2
+  exit 1
+fi
+
+echo "Release version: $VERSION ($BUILD_NUMBER)"
+echo "Building universal Release app..."
+xcodebuild \
+  -project NotchLing.xcodeproj \
+  -scheme NotchLing \
+  -configuration Release \
+  -derivedDataPath "$DERIVED" \
+  ARCHS="arm64 x86_64" \
+  ONLY_ACTIVE_ARCH=NO \
+  MARKETING_VERSION="$VERSION" \
+  CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
+  CODE_SIGNING_ALLOWED=NO \
+  build
+
+APP="$DERIVED/Build/Products/Release/NotchLing.app"
+[[ -d "$APP" ]] || { echo "Release app not found: $APP" >&2; exit 1; }
+
+# The Xcode "Build notchling-bridge helper" phase (Scripts/build-bridge) already
+# compiled the helper for every ARCHS slice into the app bundle.
+SUPPORT="$APP/Contents/Helpers"
+[[ -x "$SUPPORT/notchling-bridge" ]] || { echo "Bridge helper missing from $SUPPORT" >&2; exit 1; }
+[[ "$(lipo -archs "$SUPPORT/notchling-bridge" | tr ' ' '\n' | sort | tr '\n' ' ')" == "arm64 x86_64 " ]] || { echo "Bridge helper is not universal" >&2; exit 1; }
+
+BUILT_VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$APP/Contents/Info.plist")
+BUILT_NUMBER=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$APP/Contents/Info.plist")
+[[ "$BUILT_VERSION" == "$VERSION" ]] || { echo "Built version mismatch: expected $VERSION, got $BUILT_VERSION" >&2; exit 1; }
+[[ "$BUILT_NUMBER" == "$BUILD_NUMBER" ]] || { echo "Built number mismatch: expected $BUILD_NUMBER, got $BUILT_NUMBER" >&2; exit 1; }
+BASE="NotchLing-${VERSION}-macOS-universal"
+IDENTITY="${NOTCHLING_CODESIGN_IDENTITY:--}"
+if [[ "$IDENTITY" == "-" ]]; then
+  # Ad-hoc builds still use hardened runtime so a test build behaves like a release.
+  echo "WARNING: no Developer ID identity supplied; creating ad-hoc signed TEST build."
+  codesign --force --options runtime --sign - "$SUPPORT/notchling-bridge"
+  codesign --force --options runtime --sign - "$APP"
+else
+  echo "Signing with: $IDENTITY"
+  codesign --force --options runtime --timestamp --sign "$IDENTITY" "$SUPPORT/notchling-bridge"
+  codesign --force --options runtime --timestamp --sign "$IDENTITY" "$APP"
+fi
+codesign --verify --deep --strict --verbose=2 "$APP"
+
+NOTARIZE=0
+if [[ -n "${APPLE_ID:-}" && -n "${APPLE_APP_SPECIFIC_PASSWORD:-}" && -n "${APPLE_TEAM_ID:-}" ]]; then
+  if [[ "$IDENTITY" == "-" ]]; then echo "Notarization requested but build is ad-hoc signed." >&2; exit 1; fi
+  NOTARIZE=1
+fi
+
+# Staple the app itself before packaging so the ZIP and DMG both carry a
+# ticket that works offline.
+if (( NOTARIZE )); then
+  APP_SUBMISSION="$BUILD_DIR/NotchLing-notarize.zip"
+  ditto -c -k --keepParent "$APP" "$APP_SUBMISSION"
+  "$ROOT/Scripts/notarize" "$APP_SUBMISSION"
+  "$ROOT/Scripts/staple" "$APP"
+  rm -f "$APP_SUBMISSION"
+fi
+
+RELEASE_ROOT="$STAGE_DIR/$BASE"
+mkdir -p "$RELEASE_ROOT"
+ditto "$APP" "$RELEASE_ROOT/NotchLing.app"
+ln -s /Applications "$RELEASE_ROOT/Applications"
+# Window layout: the "Drag NotchLing to Applications" background and icon
+# positions. Generated once (see Distribution/dmg/settings.py), not per build.
+cp Distribution/dmg/background.png "$RELEASE_ROOT/.background.png"
+cp Distribution/dmg/DS_Store "$RELEASE_ROOT/.DS_Store"
+chflags hidden "$RELEASE_ROOT/.background.png" "$RELEASE_ROOT/.DS_Store"
+
+ZIP="$DIST_DIR/$BASE.zip"
+DMG="$DIST_DIR/$BASE.dmg"
+ditto -c -k --sequesterRsrc --keepParent "$RELEASE_ROOT/NotchLing.app" "$ZIP"
+hdiutil create -volname "NotchLing" -srcfolder "$RELEASE_ROOT" -ov -format UDZO "$DMG"
+if [[ "$IDENTITY" != "-" ]]; then codesign --force --timestamp --sign "$IDENTITY" "$DMG"; fi
+if (( NOTARIZE )); then
+  "$ROOT/Scripts/notarize" "$DMG"
+  "$ROOT/Scripts/staple" "$DMG"
+fi
+(cd "$DIST_DIR" && shasum -a 256 "$(basename "$ZIP")" "$(basename "$DMG")" > SHA256SUMS.txt)
+echo
+if (( NOTARIZE )); then
+  "$ROOT/Scripts/verify-release" --notarized "$RELEASE_ROOT/NotchLing.app" "$DMG"
+else
+  "$ROOT/Scripts/verify-release" "$RELEASE_ROOT/NotchLing.app" "$DMG"
+  echo "NOT NOTARIZED: this build will show a Gatekeeper warning on other Macs."
+fi
+echo
+echo "Release artifacts:"
+ls -lh "$ZIP" "$DMG" "$DIST_DIR/SHA256SUMS.txt"
+echo
+echo "Architectures:"
+lipo -archs "$APP/Contents/MacOS/NotchLing"
+lipo -archs "$SUPPORT/notchling-bridge"

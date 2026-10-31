@@ -1,0 +1,44 @@
+#!/bin/zsh
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$ROOT"
+
+VERSION="${1:-}"
+if [[ ! "$VERSION" =~ '^[0-9]+([.][0-9]+){1,2}$' ]]; then
+  echo "Usage: ./Scripts/release <version>   (example: ./Scripts/release 0.2.1)" >&2
+  exit 1
+fi
+
+TAG="v$VERSION"
+
+if [[ -n "$(git status --porcelain)" ]]; then
+  echo "Working tree is not clean. Commit or stash changes before releasing." >&2
+  exit 1
+fi
+
+BRANCH="$(git branch --show-current)"
+if [[ "$BRANCH" != "main" ]]; then
+  echo "Releases must be tagged from main; current branch is '$BRANCH'." >&2
+  exit 1
+fi
+
+git fetch origin main --tags
+
+if [[ "$(git rev-parse HEAD)" != "$(git rev-parse origin/main)" ]]; then
+  echo "Local main is not exactly origin/main. Pull/push before releasing." >&2
+  exit 1
+fi
+
+if git rev-parse "$TAG" >/dev/null 2>&1 || git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
+  echo "Tag $TAG already exists." >&2
+  exit 1
+fi
+
+echo "Creating release tag $TAG from $(git rev-parse --short HEAD)"
+git tag -a "$TAG" -m "NotchLing $VERSION"
+git push origin "$TAG"
+
+echo
+echo "$TAG pushed. GitHub Actions will build, sign, notarize and publish the universal DMG and ZIP."
+echo "Tagged releases fail unless the signing and notarization secrets are configured."

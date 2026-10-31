@@ -1,0 +1,24 @@
+.DS_Store
+.build/
+.release-build/
+dist/
+.claude/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+
+# Signing material and release output
+*.p12
+*.cer
+*.certSigningRequest
+*.mobileprovision
+*.pem
+*.key
+.env
+.env.*
+*.keychain
+*.keychain-db
+notarytool/credentials
+notarytool/credentials.*
+*.p8
+*.pfx

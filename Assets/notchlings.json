@@ -1,0 +1,46 @@
+[
+  {
+    "id": "rex",
+    "name": "Rex",
+    "species": "T-Rex",
+    "assetDirectory": "Rex",
+    "accentRGB": [
+      0.67,
+      0.95,
+      0.48
+    ],
+    "frames": {
+      "resting": "resting@2x.png",
+      "working": "working@2x.png",
+      "attentionDown": "needs2-down@2x.png",
+      "attentionUp": "needs2-up@2x.png",
+      "attentionOut": "needs2-wave-out@2x.png",
+      "attentionIn": "needs2-wave-in@2x.png",
+      "peekOpen": "peek-open@2x.png",
+      "peekWave": "peek-wave@2x.png",
+      "peekBlink": "peek-blink@2x.png"
+    }
+  },
+  {
+    "id": "elephant",
+    "name": "Ellie",
+    "species": "Elephant",
+    "assetDirectory": "Elephant",
+    "accentRGB": [
+      0.65,
+      0.77,
+      0.9
+    ],
+    "frames": {
+      "resting": "resting@2x.png",
+      "working": "working@2x.png",
+      "attentionDown": "attention-down@2x.png",
+      "attentionUp": "attention-up@2x.png",
+      "attentionOut": "attention-out@2x.png",
+      "attentionIn": "attention-in@2x.png",
+      "peekOpen": "peek-open@2x.png",
+      "peekWave": "peek-wave@2x.png",
+      "peekBlink": "peek-blink@2x.png"
+    }
+  }
+]
