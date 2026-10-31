@@ -1,67 +1,110 @@
 <p align="center">
-  <img src=".github/assets/app-icon.png" width="200" alt="NotchLing app icon">
+  <img src=".github/assets/hero.png" alt="Rex beside the MacBook notch, with a panel showing three coding agents and what each one needs" width="900">
 </p>
 
 <h1 align="center">NotchLing</h1>
 
 <p align="center">
-  A tiny companion beside your MacBook notch that shows what your AI coding agents are doing.
+  <b>Your AI coding agents, at a glance.</b><br>
+  A tiny pet beside your MacBook notch. It naps while nothing runs, works when an agent works, and waves when one needs you.
 </p>
 
-<h3 align="center">
-  <a href="../../releases/latest">⬇️ Download for macOS</a>
-</h3>
+<p align="center">
+  <a href="../../releases/latest"><img src=".github/assets/download.svg" alt="Download for macOS" height="56"></a>
+</p>
 
-## What it does
+<p align="center">
+  <img src=".github/assets/badge-macos.svg" alt="macOS 14 or later">
+  <img src=".github/assets/badge-chip.svg" alt="Apple Silicon and Intel">
+  <img src=".github/assets/badge-signed.svg" alt="Signed and notarized">
+  <img src=".github/assets/badge-license.svg" alt="MIT license">
+</p>
 
-Pick **Rex** the T-Rex or **Ellie** the elephant from **••• → Appearance…**. They sit by the notch and show your agents' state at a glance:
+---
 
-- **Resting**: nothing is running, so your companion naps.
-- **Working**: at least one agent is busy.
-- **Needs you**: a brief alert when an agent needs input, finishes, or hits an error. The alert stays in the panel afterwards.
-- **Peeks**: an occasional wave or blink. Never a status signal.
+## Meet your NotchLing
 
-Click your companion to open the agent panel. Right-click for Quick Note or to quit.
+<p align="center">
+  <img src=".github/assets/states.png" alt="Rex the T-Rex and Ellie the elephant in five moods: resting, working, needs you, and two peeks" width="860">
+</p>
 
-## Supported agents
+Pick **Rex** the T-Rex or **Ellie** the elephant from **••• → Appearance…**. They share the same moves, so you always read them the same way.
 
-- **Claude Code**, including the Code tab in the Claude desktop app.
-- **Codex**, including the ChatGPT desktop app. Trust NotchLing's hooks once in Codex **Settings → Hooks**, or Codex ignores them.
-- **Cursor**
-- **Antigravity**
+## How it works
 
-Chats that don't run hooks aren't supported. That includes regular Claude and ChatGPT chats outside Claude Code and Codex.
+```mermaid
+flowchart LR
+    A["Claude Code<br/>Codex<br/>Cursor<br/>Antigravity"] -->|"a tiny local hook"| B["notchling-bridge"]
+    B -->|"one line of status"| C["NotchLing"]
+    C --> D(("Rex or Ellie<br/>reacts"))
+```
 
-## Install
+Everything happens on your Mac. NotchLing needs no account and no API keys, and it never asks for Screen Recording, Accessibility or Full Disk Access.
 
-1. Download the latest `.dmg` from [Releases](../../releases/latest) and open it.
-2. Drag **NotchLing** to **Applications**, then open it.
-3. The first launch walks you through picking a companion and connecting the tools it finds. Change them anytime from **••• → Connections…**.
+## Set up in under a minute
 
-**Requirements:** macOS 14 (Sonoma) or later, and a MacBook with a notch.
+<table>
+  <tr>
+    <td align="center" width="33%"><img src=".github/assets/install.png" alt="The installer window: drag NotchLing to Applications"></td>
+    <td align="center" width="33%"><img src=".github/assets/setup-1-welcome.png" alt="NotchLing's welcome screen"></td>
+    <td align="center" width="33%"><img src=".github/assets/setup-2-companion.png" alt="Choosing Rex or Ellie"></td>
+  </tr>
+  <tr>
+    <td align="center"><b>1.</b> Drag it to Applications</td>
+    <td align="center"><b>2.</b> Open it</td>
+    <td align="center"><b>3.</b> Pick a companion, then connect your tools</td>
+  </tr>
+</table>
 
-## Privacy
+## Works with
 
-NotchLing runs entirely on your Mac. It needs no account and no API keys, and it never asks for Screen Recording, Accessibility or Full Disk Access. Agents call small local hooks when something happens, and NotchLing reads that local status.
+| Agent | Where it works |
+|---|---|
+| **Claude Code** | Terminal, and the Code tab in the Claude desktop app |
+| **Codex** | Codex CLI and the ChatGPT desktop app. Trust the hooks once in Codex **Settings → Hooks** |
+| **Cursor** | Cursor's agent hooks |
+| **Antigravity** | Antigravity's agent hooks |
 
-## Uninstall
+> [!NOTE]
+> Chats that don't run hooks aren't supported. That includes regular Claude and ChatGPT chats outside Claude Code and Codex.
+
+<details>
+<summary><b>Requirements</b></summary>
+
+<br>
+
+macOS 14 (Sonoma) or later, on a MacBook with a notch. Apple Silicon and Intel are both supported.
+
+</details>
+
+<details>
+<summary><b>Uninstall</b></summary>
+
+<br>
 
 1. Open **••• → Connections…** and click **Disconnect** on each tool. This removes NotchLing's hooks from your agents' settings.
 2. Quit NotchLing from the **•••** menu and move it to the Trash.
 3. Optional: delete `~/Library/Application Support/NotchLing`.
 
-You can also remove all hooks from Terminal before trashing the app:
+You can also remove every hook from Terminal before trashing the app:
 
 ```bash
 /Applications/NotchLing.app/Contents/Helpers/notchling-bridge uninstall all
 ```
 
-## Build from source
+</details>
+
+<details>
+<summary><b>Build from source</b></summary>
+
+<br>
 
 ```bash
 xcodebuild -project NotchLing.xcodeproj -scheme NotchLing -configuration Release build
 ./Scripts/check-notchlings && ./Scripts/test-integrations
 ```
+
+</details>
 
 ## License
 
