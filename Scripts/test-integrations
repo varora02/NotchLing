@@ -317,7 +317,7 @@ def test_release_scripts(tmp):
     calls = work / "calls.log"
     artifact = work / "NotchLing.zip"
     artifact.write_text("x")
-    secret = "abcd-efgh-ijkl-mnop"
+    secret = "fake-credential-for-redaction-test"
 
     def notarize(status, **override):
         calls.write_text("")
