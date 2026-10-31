@@ -22,3 +22,6 @@ notarytool/credentials
 notarytool/credentials.*
 *.p8
 *.pfx
+
+# Local maintainer notes; never published
+docs/
