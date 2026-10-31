@@ -53,7 +53,9 @@ jobs:
           security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           security import "$CERT_PATH" -k "$KEYCHAIN_PATH" -P "$MACOS_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
-          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          # Its output lists the key attributes, including the certificate holder's name, which
+          # would land in a public log.
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH" >/dev/null
           security list-keychains -d user -s "$KEYCHAIN_PATH"
           printf 'NOTCHLING_CODESIGN_IDENTITY=%s\n' "$MACOS_SIGNING_IDENTITY" >> "$GITHUB_ENV"
 
